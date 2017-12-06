@@ -14,6 +14,7 @@ import (
 func main() {
 	const (
 		port    string = ":8800"
+		auth    string = "./ui/auth"
 		entry   string = "./ui/index.html"
 		assets  string = "./ui/dist"
 		dialect string = "postgres"
@@ -21,12 +22,6 @@ func main() {
 	connectionString := config.GetPSQLInfo()
 
 	mux := http.NewServeMux()
-
-	//proper way to do it
-	// db, err := database.InitDb(connectionString)
-	// if err != nil {
-	// 	panic(err)
-	// }
 
 	db, err := gorm.Open(dialect, connectionString)
 	if err != nil {
@@ -43,10 +38,6 @@ func main() {
 	//GET  get user by login (authentication required)
 	mux.Handle("/api/userdata", handlers.AuthJWTMiddleware.Handler(handlers.GetUserByLogin(psqldb)))
 	//GET  get all users json
-	mux.Handle("/api/users/getall", handlers.GetUsers(psqldb))
-	//GET  get single user json; example: /api/users/get?id=1
-	mux.Handle("/api/users/get", handlers.GetUser(psqldb))
-	//POST create a new user
 	mux.Handle("/api/users/create", handlers.PostUser(psqldb))
 	//POST login to application and get the JWT as response body
 	mux.Handle("/api/login", handlers.PostLogin(psqldb))
@@ -54,7 +45,20 @@ func main() {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, entry)
 	})
+
+	//Auth
+	mux.Handle("/auth/", http.StripPrefix("/auth/", http.FileServer(http.Dir(auth))))
+	//redirect get vk code
+	mux.HandleFunc("/auth/getcode/vk", func(w http.ResponseWriter, r *http.Request) {
+		//var url = "https://oauth.vk.com/authorize?client_id=6287513&scope=friends&redirect_uri=http://localhost:8800/auth/gettoken/vk"
+		var url = config.VKAuthURL + "?client_id=" + config.VKClientID + "&scope=" + config.VKScope + "&redirect_uri=" + config.VKRedirectURI
+		http.Redirect(w, r, url, http.StatusFound)
+	})
+	//get vk token
+	mux.Handle("/auth/gettoken/vk", handlers.VKGetToken(psqldb))
+
 	log.Println("serving on port ", port)
 	err = http.ListenAndServe(port, mux)
+	//err = http.ListenAndServeTLS(port, "certificate/cert.pem", "certificate/key.pem", mux)
 	log.Fatal(err)
 }
